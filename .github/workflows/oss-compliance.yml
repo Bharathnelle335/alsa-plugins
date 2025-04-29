@@ -61,6 +61,15 @@ jobs:
         run: |
           syft dir:. -o spdx-json > $GITHUB_WORKSPACE/syft-sbom.spdx.json
 
+      - name: Download ORT CLI
+        run: |
+          curl -L https://github.com/oss-review-toolkit/ort/releases/download/v2024.03.11/ort-2024.03.11.jar -o ort-2024.03.11.jar
+
+      - name: Verify ORT JAR integrity (optional)
+        run: |
+          file ort-2024.03.11.jar
+          ls -lh ort-2024.03.11.jar
+
       - name: Run ORT Scan
         run: |
           java -jar ort-2024.03.11.jar analyze -i . -o ort-results
