@@ -1,101 +1,71 @@
-name: oss-compliance-universal
+name: Universal OSS Compliance & SBOM (Syft + SCANOSS)
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  compliance:
+  oss-compliance-universal:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---------- Setup ----------
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
       - name: Set up Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      # ---------- SCANOSS ----------
-      - name: Install SCANOSS CLI
-        run: pip install scanoss
-
-      - name: Run SCANOSS Scan
-        run: scanoss scan -o scanoss-results.json .
-
-      # ---------- Syft ----------
-      - name: Install Syft
+      - name: Install required tools
         run: |
+          pip install scanoss
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-
-      - name: Run Syft SBOM
-        run: syft dir:. -o spdx-json > $GITHUB_WORKSPACE/syft-sbom.spdx.json
-
-      # ---------- ORT ----------
-      - name: Download ORT CLI using GitHub CLI
+      - name: Auto Detect and Build (only if needed)
         run: |
-          gh release download v2024.03.11 \
-            --repo oss-review-toolkit/ort \
-            --pattern "ort-2024.03.11.jar"
-
-      - name: Verify ORT JAR
-        run: file ort-2024.03.11.jar
-
-      - name: Run ORT Scan
-        run: java -jar ort-2024.03.11.jar analyze -i . -o ort-results
-
-      # ---------- Report Generation ----------
-      - name: Install Python Dependencies for Report Generation
-        run: pip install -r requirements.txt
-
+          # Maven project detection
+          if [ -f "**/pom.xml" ] || [ -f "pom.xml" ]; then
+            echo "Maven project detected. Running Maven build..."
+            chmod +x mvnw || true
+            ./mvnw dependency:copy-dependencies -DincludeScope=runtime || mvn dependency:copy-dependencies -DincludeScope=runtime
+          fi
+          # Gradle project detection
+          if [ -f "**/build.gradle" ] || [ -f "**/build.gradle.kts" ] || [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+            echo "Gradle project detected. Running Gradle build..."
+            chmod +x gradlew || true
+            ./gradlew dependencies || gradle dependencies
+          fi
+          # NodeJS project detection
+          if [ -f "**/package.json" ] || [ -f "package.json" ]; then
+            echo "NodeJS project detected. Running npm install..."
+            npm install
+          fi
+          # Python project detection
+          if [ -f "**/requirements.txt" ] || [ -f "requirements.txt" ]; then
+            echo "Python project detected. Running pip install..."
+            pip install -r requirements.txt
+          fi
+      - name: Run SCANOSS Scan
+        run: |
+          scanoss-py scan -o scanoss-results.json .
+      - name: Generate SBOM with Syft
+        run: |
+          syft dir:. -o spdx-json > $GITHUB_WORKSPACE/syft-sbom.spdx.json
+      - name: Install Python libraries for report generation
+        run: |
+          pip install pandas openpyxl
       - name: Generate Compliance Excel Reports
         run: |
           python3 generate_excel_merge_syft_scanoss.py $GITHUB_WORKSPACE/syft-sbom.spdx.json $GITHUB_WORKSPACE/scanoss-results.json
-
-      # ---------- Upload Excel Reports ----------
-      - name: Upload Compliance Excel Reports
-        uses: actions/upload-artifact@v3
+      - name: Upload Reports
+        uses: actions/upload-artifact@v4
         with:
-          name: compliance-reports
+          name: compliance-and-sbom-output
           path: |
-            compliance_merged_report.xlsx
-            syft_components_report.xlsx
-            scanoss_components_report.xlsx
-
-      # ---------- Upload JSON/YAML Outputs ----------
-      - name: Upload Syft SBOM JSON
-        uses: actions/upload-artifact@v3
-        with:
-          name: syft-sbom-json
-          path: syft-sbom.spdx.json
-
-      - name: Upload SCANOSS Results JSON
-        uses: actions/upload-artifact@v3
-        with:
-          name: scanoss-results-json
-          path: scanoss-results.json
-
-      - name: Upload ORT Analyzer JSON
-        uses: actions/upload-artifact@v3
-        with:
-          name: ort-analyzer-json
-          path: ort-results/analyzer-result.json
-
-      - name: Upload ORT Analyzer YAML
-        uses: actions/upload-artifact@v3
-        with:
-          name: ort-analyzer-yaml
-          path: ort-results/analyzer-result.yml
+            compliance-report.xlsx
+            syft-compliance-report.xlsx
+            scanoss-compliance-report.xlsx
+            syft-sbom.spdx.json
+            scanoss-results.json
