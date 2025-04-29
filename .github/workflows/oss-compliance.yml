@@ -30,7 +30,7 @@ jobs:
           java-version: '21'
 
       - name: Set up GitHub CLI
-        uses: cli/cli-action@v2
+        uses: actions/setup-gh@v4
 
       # ---------- SCANOSS ----------
       - name: Install SCANOSS CLI
