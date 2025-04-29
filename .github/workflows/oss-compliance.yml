@@ -1,4 +1,4 @@
-name: Universal OSS Compliance & SBOM (Syft + SCANOSS)
+name: Universal OSS Compliance & SBOM (Syft + SCANOSS + ORT)
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Set up Java
@@ -19,34 +19,35 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Install required tools
+      - name: Install Required Tools
         run: |
-          pip install scanoss
+          pip install scanoss pandas openpyxl
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          curl -LO https://github.com/oss-review-toolkit/ort/releases/download/2024.03.11/ort-2024.03.11.jar
 
       - name: Auto Detect and Build (only if needed)
         run: |
-          # Maven project detection
+          # Maven
           if [ -f "**/pom.xml" ] || [ -f "pom.xml" ]; then
             echo "Maven project detected. Running Maven build..."
             chmod +x mvnw || true
             ./mvnw dependency:copy-dependencies -DincludeScope=runtime || mvn dependency:copy-dependencies -DincludeScope=runtime
           fi
 
-          # Gradle project detection
+          # Gradle
           if [ -f "**/build.gradle" ] || [ -f "**/build.gradle.kts" ] || [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
             echo "Gradle project detected. Running Gradle build..."
             chmod +x gradlew || true
             ./gradlew dependencies || gradle dependencies
           fi
 
-          # NodeJS project detection
+          # NodeJS
           if [ -f "**/package.json" ] || [ -f "package.json" ]; then
             echo "NodeJS project detected. Running npm install..."
             npm install
           fi
 
-          # Python project detection
+          # Python
           if [ -f "**/requirements.txt" ] || [ -f "requirements.txt" ]; then
             echo "Python project detected. Running pip install..."
             pip install -r requirements.txt
@@ -60,15 +61,15 @@ jobs:
         run: |
           syft dir:. -o spdx-json > $GITHUB_WORKSPACE/syft-sbom.spdx.json
 
-      - name: Install Python libraries for report generation
+      - name: Run ORT Scan
         run: |
-          pip install pandas openpyxl
+          java -jar ort-2024.03.11.jar analyze -i . -o ort-results
 
       - name: Generate Compliance Excel Reports
         run: |
           python3 generate_excel_merge_syft_scanoss.py $GITHUB_WORKSPACE/syft-sbom.spdx.json $GITHUB_WORKSPACE/scanoss-results.json
 
-      - name: Upload Reports
+      - name: Upload Compliance Reports
         uses: actions/upload-artifact@v4
         with:
           name: compliance-and-sbom-output
@@ -78,3 +79,10 @@ jobs:
             scanoss-compliance-report.xlsx
             syft-sbom.spdx.json
             scanoss-results.json
+
+      - name: Upload ORT Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ort-scan-results
+          path: |
+            ort-results/
