@@ -29,9 +29,6 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Set up GitHub CLI
-        uses: actions/setup-gh@v4
-
       # ---------- SCANOSS ----------
       - name: Install SCANOSS CLI
         run: pip install scanoss
@@ -78,7 +75,7 @@ jobs:
             syft_components_report.xlsx
             scanoss_components_report.xlsx
 
-      # ---------- Upload JSON Outputs ----------
+      # ---------- Upload JSON/YAML Outputs ----------
       - name: Upload Syft SBOM JSON
         uses: actions/upload-artifact@v3
         with:
